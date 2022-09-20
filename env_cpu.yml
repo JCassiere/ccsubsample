@@ -1,0 +1,9 @@
+name: ccsubsample
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - pip
+  - python=3.6.*
+  - pykdtree

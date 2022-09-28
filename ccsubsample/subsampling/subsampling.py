@@ -108,7 +108,7 @@ def find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs
     return keep_indices
 
 
-def subsample(data, cutoff_sig=0.2, verbose=1, num_cpus_to_not_use=1):
+def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
     """
     Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
     Parameters
@@ -127,7 +127,7 @@ def subsample(data, cutoff_sig=0.2, verbose=1, num_cpus_to_not_use=1):
     
     if verbose >= 1:
         start = time.time()
-        print("Started NN-subsampling, original length: {}".format(len(data)))
+        print("Started NN-ccsubsample, original length: {}".format(len(data)))
     
     cutoff = cutoff_sig * sqrt_of_summed_variance(data)
     
@@ -186,7 +186,7 @@ def subsample(data, cutoff_sig=0.2, verbose=1, num_cpus_to_not_use=1):
     if verbose >= 1:
         total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
         total_time = time.time() - start
-        to_print = "End NN-subsampling. Data points remaining: {}\t Time:{}"
+        to_print = "End NN-ccsubsample. Data points remaining: {}\t Time:{}"
         print(to_print.format(total_remaining_length, total_time))
     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
     return data_indices
@@ -215,7 +215,7 @@ def num_small_clusters(clusters, N=5):
 
 def subsample_clustering(data, start_cutoff_sig=0.2, max_clusters=20, num_cpus_to_not_use=1):
     """
-    Extend the nearest-neighbor subsampling algorithm (as seen in subsample() above) to a fast
+    Extend the nearest-neighbor ccsubsample algorithm (as seen in subsample() above) to a fast
     clustering algorithm. When a point is "removed", instead assign it (and all its "cluster" points)
     to its nearest neighbor's "cluster". If a point has a cluster attached to it, it is termed a "leader".
     This is similar to agglomerative clustering where the distance metric is distance between cluster
@@ -323,7 +323,7 @@ def batch_subsampling(
     -------------
     data: List. the original list of data points
     batch_size [1000000]: Int. the number of datapoints in each batch
-    standard_scale [True]: Boolean. Whether to apply standard scaler to the dataset prior to subsampling
+    standard_scale [True]: Boolean. Whether to apply standard scaler to the dataset prior to ccsubsample
     cutoff_sig [0.02]: Float. cutoff significance. the cutoff distance equals to the Euclidean
                        norm of the standard deviations in all dimensions of the data points
     rate [0.3]: Float. possibility of deletion
@@ -350,7 +350,7 @@ def batch_subsampling(
             data_slice = data[(batch_size * i):]
             data_indices_slice = data_indices[(batch_size * i):]
         scaled_data = scale_and_standardize_data(data_slice)
-        subsampling_result = subsample(scaled_data, cutoff_sig)
+        subsampling_result = kdtree_subsample(scaled_data, cutoff_sig)
         subsampled_data_indices += data_indices_slice[subsampling_result]
 
     subsampled_data_indices = np.array(subsampled_data_indices)
@@ -366,9 +366,9 @@ def batch_subsampling(
         return batch_subsampling(subsampled_data, batch_size, standard_scale, cutoff_sig,
                                  verbose, shuffle, data_indices=subsampled_data_indices)
     else:
-        # perform subsampling on the combined results from all the batches
+        # perform ccsubsample on the combined results from all the batches
         scaled_data = scale_and_standardize_data(subsampled_data)
-        subsampling_result = subsample(scaled_data, cutoff_sig)
+        subsampling_result = kdtree_subsample(scaled_data, cutoff_sig)
         return subsampled_data_indices[subsampling_result]
 
 
@@ -396,7 +396,7 @@ def batch_subsampling_with_PCA(
     -------------
     data: List. the original list of data points
     batch_size [1000000]: Int. the number of datapoints in each batch
-    standard_scale [True]: Boolean. Whether to apply standard scaler to the dataset prior to subsampling
+    standard_scale [True]: Boolean. Whether to apply standard scaler to the dataset prior to ccsubsample
     cutoff_sig [0.02]: Float. cutoff significance. the cutoff distance equals to the Euclidean
                        norm of the standard deviations in all dimensions of the data points
     rate [0.3]: Float. possibility of deletion
@@ -426,7 +426,7 @@ def batch_subsampling_with_PCA(
             data_indices_slice = data_indices[(batch_size * i):]
         reduced_data = reduce_dimensions_with_pca(data_slice, max_component, target_variance)
         scaled_data = scale_and_standardize_data(reduced_data)
-        subsampling_result = subsample(scaled_data, cutoff_sig)
+        subsampling_result = kdtree_subsample(scaled_data, cutoff_sig)
         subsampled_data_indices += data_indices_slice[subsampling_result]
 
     subsampled_data_indices = np.array(subsampled_data_indices)
@@ -442,10 +442,10 @@ def batch_subsampling_with_PCA(
         return batch_subsampling_with_PCA(subsampled_data, batch_size, max_component, target_variance, standard_scale,
                                           cutoff_sig, verbose, shuffle, data_indices=subsampled_data_indices)
     else:
-        # perform subsampling on the combined results from all the batches
+        # perform ccsubsample on the combined results from all the batches
         reduced_data = reduce_dimensions_with_pca(subsampled_data, max_component, target_variance)
         scaled_data = scale_and_standardize_data(reduced_data)
-        subsampling_result = subsample(scaled_data, cutoff_sig)
+        subsampling_result = kdtree_subsample(scaled_data, cutoff_sig)
         return subsampled_data_indices[subsampling_result]
 
 def imagewise_subsampling(torchg_data, cutoff):
@@ -462,7 +462,7 @@ def imagewise_subsampling(torchg_data, cutoff):
     datapoint_to_image_index = []
     for i, image in enumerate(torchg_data):
         scaled_reduced_data = scale_and_standardize_data(image.fingerprint)
-        subsampled_fingerprint = subsample(
+        subsampled_fingerprint = kdtree_subsample(
             scaled_reduced_data,
             cutoff_sig=cutoff,
             verbose=2
@@ -472,8 +472,8 @@ def imagewise_subsampling(torchg_data, cutoff):
         datapoint_to_image_index.extend([i] * len(subsampled_fingerprint))
     
     reduced_dim_fingerprints = reduce_dimensions_with_pca(data=np.array(imagewise_fingerprints))
-    data_indices_to_keep = subsample(data=reduced_dim_fingerprints,
-                                     cutoff_sig=cutoff,
-                                     verbose=2)
+    data_indices_to_keep = kdtree_subsample(data=reduced_dim_fingerprints,
+                                            cutoff_sig=cutoff,
+                                            verbose=2)
     image_indices_to_keep = get_image_indices_to_keep(data_indices_to_keep, datapoint_to_image_index)
     return data_indices_to_keep, image_indices_to_keep

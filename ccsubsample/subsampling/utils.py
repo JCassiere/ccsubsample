@@ -77,7 +77,7 @@ def get_image_indices_to_keep(data_indices_to_keep, image_indices):
 
 def reduce_dimensions_with_pca(data, max_components=10, target_variance=0.99, verbose=1):
     """
-    Reduce dimensions of the fingerprint data using PCA. For input to subsampling algorithm
+    Reduce dimensions of the fingerprint data using PCA. For input to ccsubsample algorithm
     :param data: np.ndarray[float] - the fingerprint data which needs its dimensionality reduced
     :param max_components: int - the maximum number of principal components (PCs) to keep
     :param target_variance: float - the desired amount of variance explained by the kept PCs
@@ -136,7 +136,7 @@ def scale_and_standardize_data(data):
 
 def get_images_hash(images):
     """
-    Create a hash for the input images for identification of a subsampling run when
+    Create a hash for the input images for identification of a ccsubsample run when
     loading or storing results
     :param images: List[Atom] - The images for which a hash is created
     :return: images_hash: str - the hash of the images
@@ -149,8 +149,8 @@ def sampler_config_hash(config):
     """
     Create a hash of the sampling config. This hash can be used to save results or
     retrieve previous results
-    :param config: dict - dictionary of values describing subsampling configuration
-    :return: sampler_hash: str - hashed string representing a description of the subsampling
+    :param config: dict - dictionary of values describing ccsubsample configuration
+    :return: sampler_hash: str - hashed string representing a description of the ccsubsample
       parameters used
     """
     config_json = json.dumps(config, sort_keys=True)
@@ -160,14 +160,14 @@ def sampler_config_hash(config):
     
 def save_sampling_results(config, base_save_dir, images, subsampled_image_indices):
     """
-    Save the results of subsampling along with the configuration used
+    Save the results of ccsubsample along with the configuration used
     to get them
-    :param config: dict - dictionary of values describing subsampling configuration
-    :param base_save_dir: str - directory that will hold the subsampling results
+    :param config: dict - dictionary of values describing ccsubsample configuration
+    :param base_save_dir: str - directory that will hold the ccsubsample results
     :param images: List[Atoms] - the list of images to be used for identifying the
-               inputs for the subsampling results
+               inputs for the ccsubsample results
     :param subsampled_image_indices: List[int] - the indices of the data remaining after
-               subsampling
+               ccsubsample
     :return: None
     """
     images_hash = get_images_hash(images)
@@ -190,12 +190,12 @@ def save_sampling_results(config, base_save_dir, images, subsampled_image_indice
 
 def load_if_exists(config, base_save_dir, images):
     """
-    Load previous subsampling results if they exist
-    :param config: dict - dictionary of values describing subsampling configuration
-    :param base_save_dir: str - directory that may hold the subsampling results
+    Load previous ccsubsample results if they exist
+    :param config: dict - dictionary of values describing ccsubsample configuration
+    :param base_save_dir: str - directory that may hold the ccsubsample results
     :param images: List[Atoms] - the list of images to be used for identifying the
-               inputs for the subsampling results
-    :return: kept image indices from a previous subsampling run
+               inputs for the ccsubsample results
+    :return: kept image indices from a previous ccsubsample run
     """
     images_hash = get_images_hash(images)
     sampler_hash = sampler_config_hash(config)

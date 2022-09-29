@@ -43,6 +43,7 @@ def pykdtree_query(full_data, data_slice):
 
 def single_process_kdtree_query(remaining_datapoints):
     kd_tree = KDTree(remaining_datapoints, leafsize=6)
+    # get 2 nearest neighbors, because the first closest will be the point itself
     distances, indices = kd_tree.query(remaining_datapoints, k=2)
     return distances, indices
 
@@ -146,10 +147,7 @@ def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
             iter_start = time.time()
         
         # build and query nearest neighbour model
-        # if remaining_datapoints.size < 5000000:
         distances, indices = single_process_kdtree_query(remaining_datapoints)
-        # else:
-        #     distances, indices = multi_process_kdtree_query(remaining_datapoints, num_cpus_to_not_use)
         
         # if distance between a point and its nearest neighbor is below cutoff distance,
         # add the pair's indices (for this iteration) to the candidate removal list

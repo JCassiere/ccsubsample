@@ -1,8 +1,8 @@
 import math
 import unittest
 import numpy as np
-from ccsubsample.subsampling import point_diversity_mean_std, point_diversity_histogram
 from numpy.testing import assert_allclose
+from ccsubsample.subsampling import point_diversity_mean_std, point_diversity_histogram, number_of_points_remaining
 
 class MyTestCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -35,6 +35,12 @@ class MyTestCase(unittest.TestCase):
         expected_bin_edges = np.array([1, 1.3, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.4, 3.7, 4])
         assert_allclose(expected_histogram, histogram[0])
         assert_allclose(expected_bin_edges, histogram[1])
+        
+    def test_number_of_points_remaining(self):
+        num_points = number_of_points_remaining(self.subsampled_points)
+        expected_number = 5
+        self.assertEqual(expected_number, num_points)
+        
         
 if __name__ == '__main__':
     unittest.main()

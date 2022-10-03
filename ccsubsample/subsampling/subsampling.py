@@ -189,7 +189,119 @@ def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
     return data_indices
 
+
+def kdtree_subsample_centroids(data, cutoff_sig=0.25, verbose=1):
+    """
+    Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
+    Parameters
+    -------------
+    :param data: the list of data to subsample
+    :param cutoff_sig: float -  cutoff significance. the cutoff distance equals to the Euclidean
+        norm of the standard deviations in all dimensions of the data points
+    :param verbose: int - level of verbosity
+    :param num_cpus_to_not_use: int - the number of machine cpus to leave free in the case of
+        using multiprocessing to query the kdtree
+    Return
+    -------------
+    overall_keep_list: The list of indices of the final subsampled entries
+    """
+    start = 0
     
+    if verbose >= 1:
+        start = time.time()
+        print("Started NN-ccsubsample, original length: {}".format(len(data)))
+    
+    cutoff = cutoff_sig * sqrt_of_summed_variance(data)
+    
+    # initialize the index
+    original_data_indices = np.arange(len(data))
+    permanent_keep_indices = set()
+
+    original_data = np.asarray(data)
+    remaining_datapoints = np.asarray(data)
+    original_kd_tree = KDTree(remaining_datapoints, leafsize=6)
+    cluster_counts = np.ones(remaining_datapoints.shape[0])
+    cluster_centroids = np.array(remaining_datapoints, copy=True)
+    
+    keep_going = True
+    iter_count = 1
+    old_overall_keep_len = 0
+    iter_start = 0
+    while keep_going:
+        if verbose >= 2:
+            print("Start iteration {}, data points remaining: {}".format(iter_count,
+                                                                         len(original_data_indices)))
+            iter_start = time.time()
+        
+        # build and query nearest neighbour model
+        distances, indices = single_process_kdtree_query(remaining_datapoints)
+        
+        # if distance between a point and its nearest neighbor is below cutoff distance,
+        # add the pair's indices (for this iteration) to the candidate removal list
+        removal_candidate_indices_with_neighbor = indices[:][distances[:, 1] <= cutoff]
+        # cluster_counts = cluster_counts[distances[:, 1] <= cutoff]
+        # cluster_centroids = cluster_centroids[distances[:, 1] <= cutoff]
+
+        # if distance between a point and its nearest neighbor is above the cutoff distance,
+        # the former point can never be removed, so add it to the permanent keep list
+        iteration_permanent_keeps = original_data_indices[distances[:, 1] > cutoff]
+        
+        # set aside any data points above the cutoff, since they can never be removed
+        permanent_keep_indices = permanent_keep_indices.union(list(iteration_permanent_keeps))
+        
+        keep_remove_pairs = find_keep_remove_pairs(removal_candidate_indices_with_neighbor)
+        keep_indices = find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs)
+        # keep_indices length can be 0 if all remaining points have been added to the
+        # permanent keep list
+        if len(keep_indices) == 0:
+            break
+        # TODO - I think doing this keeps me in line with the same logic in find_keep_indices, where I
+        #  don't just keep the keep indices, but remove the remove indices from the removal candidates
+        #  array
+        # TODO - this is assuming remaining_datapoints length == removal_candidate_indices_with_neighbor, which is not true
+        #  I think I can just update cluster_counts and cluster_centroids right after removal_candidate_indices_with_neighbor
+        #  is created, using indices[:][distances[:, 1] <= cutoff] to know which rows to keep
+        # When combining two clusters, calculate the new centroid as the weighted mean of the two centroids, based
+        # on how many datapoints have been added to each cluster
+        keep_remove_pair_array = np.array(keep_remove_pairs)
+        cluster_centroids[keep_remove_pair_array[:, 0]] =\
+            (cluster_counts[keep_remove_pair_array[:, 0]][:, None] * cluster_centroids[keep_remove_pair_array[:, 0]] \
+             + cluster_counts[keep_remove_pair_array[:, 1]][:, None] * cluster_centroids[keep_remove_pair_array[:, 1]]) \
+            / (cluster_counts[keep_remove_pair_array[:, 0]][:, None] + cluster_counts[keep_remove_pair_array[:, 1]][:, None])
+        cluster_counts[keep_remove_pair_array[:, 0]] = cluster_counts[keep_remove_pair_array[:, 0]] + cluster_counts[keep_remove_pair_array[:, 1]]
+        cluster_centroids = cluster_centroids[keep_indices]
+        cluster_counts = cluster_counts[keep_indices]
+        
+        # TODO - need to keep track of the data relative to original indices for permanent keeps?
+        # original_data_indices = original_data_indices[keep_indices]
+        
+        # TODO - select points based on centroid nearest neighbors here
+        _, original_data_indices = original_kd_tree.query(cluster_centroids, k=1)
+        remaining_datapoints = original_data[original_data_indices]
+        
+        # _, remaining_indices_into_original_data = original_kd_tree.query(cluster_centroids, k=1)
+        # remaining_datapoints = original_data[remaining_indices_into_original_data]
+
+        overall_keep_len = keep_indices.size + len(permanent_keep_indices)
+        if overall_keep_len == old_overall_keep_len:
+            keep_going = False
+        
+        if verbose >= 2:
+            total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
+            iter_time = time.time() - iter_start
+            to_print = "End iteration {}. Total data points remaining: {}\t Time:{}"
+            print(to_print.format(iter_count, total_remaining_length, iter_time))
+            iter_count += 1
+        old_overall_keep_len = overall_keep_len
+    if verbose >= 1:
+        total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
+        total_time = time.time() - start
+        to_print = "End NN-ccsubsample. Data points remaining: {}\t Time:{}"
+        print(to_print.format(total_remaining_length, total_time))
+    data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
+    return data_indices
+
+
 def update_clusters(keep_remove_pairs, clusters):
     for keep, remove in keep_remove_pairs:
         clusters[keep] += clusters[remove]

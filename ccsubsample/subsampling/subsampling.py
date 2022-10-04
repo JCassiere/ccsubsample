@@ -239,8 +239,6 @@ def kdtree_subsample_centroids(data, cutoff_sig=0.25, verbose=1):
         # if distance between a point and its nearest neighbor is below cutoff distance,
         # add the pair's indices (for this iteration) to the candidate removal list
         removal_candidate_indices_with_neighbor = indices[:][distances[:, 1] <= cutoff]
-        # cluster_counts = cluster_counts[distances[:, 1] <= cutoff]
-        # cluster_centroids = cluster_centroids[distances[:, 1] <= cutoff]
 
         # if distance between a point and its nearest neighbor is above the cutoff distance,
         # the former point can never be removed, so add it to the permanent keep list
@@ -255,12 +253,6 @@ def kdtree_subsample_centroids(data, cutoff_sig=0.25, verbose=1):
         # permanent keep list
         if len(keep_indices) == 0:
             break
-        # TODO - I think doing this keeps me in line with the same logic in find_keep_indices, where I
-        #  don't just keep the keep indices, but remove the remove indices from the removal candidates
-        #  array
-        # TODO - this is assuming remaining_datapoints length == removal_candidate_indices_with_neighbor, which is not true
-        #  I think I can just update cluster_counts and cluster_centroids right after removal_candidate_indices_with_neighbor
-        #  is created, using indices[:][distances[:, 1] <= cutoff] to know which rows to keep
         # When combining two clusters, calculate the new centroid as the weighted mean of the two centroids, based
         # on how many datapoints have been added to each cluster
         keep_remove_pair_array = np.array(keep_remove_pairs)
@@ -268,19 +260,20 @@ def kdtree_subsample_centroids(data, cutoff_sig=0.25, verbose=1):
             (cluster_counts[keep_remove_pair_array[:, 0]][:, None] * cluster_centroids[keep_remove_pair_array[:, 0]] \
              + cluster_counts[keep_remove_pair_array[:, 1]][:, None] * cluster_centroids[keep_remove_pair_array[:, 1]]) \
             / (cluster_counts[keep_remove_pair_array[:, 0]][:, None] + cluster_counts[keep_remove_pair_array[:, 1]][:, None])
-        cluster_counts[keep_remove_pair_array[:, 0]] = cluster_counts[keep_remove_pair_array[:, 0]] + cluster_counts[keep_remove_pair_array[:, 1]]
+        cluster_counts[keep_remove_pair_array[:, 0]] =\
+            cluster_counts[keep_remove_pair_array[:, 0]] + cluster_counts[keep_remove_pair_array[:, 1]]
         cluster_centroids = cluster_centroids[keep_indices]
         cluster_counts = cluster_counts[keep_indices]
         
-        # TODO - need to keep track of the data relative to original indices for permanent keeps?
-        # original_data_indices = original_data_indices[keep_indices]
-        
-        # TODO - select points based on centroid nearest neighbors here
+        # select points based on centroid nearest neighbors here
         _, original_data_indices = original_kd_tree.query(cluster_centroids, k=1)
-        remaining_datapoints = original_data[original_data_indices]
         
-        # _, remaining_indices_into_original_data = original_kd_tree.query(cluster_centroids, k=1)
-        # remaining_datapoints = original_data[remaining_indices_into_original_data]
+        # EITHER use this line to compare distances between actual datapoints at the end of each iteration
+        # remaining_datapoints = original_data[original_data_indices]
+        
+        # OR use this line to just use distances between centroids
+        remaining_datapoints = np.asarray(cluster_centroids)
+
 
         overall_keep_len = keep_indices.size + len(permanent_keep_indices)
         if overall_keep_len == old_overall_keep_len:

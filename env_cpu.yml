@@ -7,3 +7,6 @@ dependencies:
   - pip
   - python=3.6.*
   - pykdtree
+  - sklearn
+  - matplotlib
+  - numpy

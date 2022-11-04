@@ -256,6 +256,7 @@ def kdtree_subsample_centroids(data, cutoff_sig=0.25, verbose=1):
         # When combining two clusters, calculate the new centroid as the weighted mean of the two centroids, based
         # on how many datapoints have been added to each cluster
         keep_remove_pair_array = np.array(keep_remove_pairs)
+        thing = cluster_centroids[keep_remove_pair_array[:, 0]]
         cluster_centroids[keep_remove_pair_array[:, 0]] =\
             (cluster_counts[keep_remove_pair_array[:, 0]][:, None] * cluster_centroids[keep_remove_pair_array[:, 0]] \
              + cluster_counts[keep_remove_pair_array[:, 1]][:, None] * cluster_centroids[keep_remove_pair_array[:, 1]]) \

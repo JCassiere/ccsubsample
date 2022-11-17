@@ -2,6 +2,7 @@ import math
 import numpy as np
 from typing import Tuple
 from pykdtree.kdtree import KDTree
+from sklearn.neighbors import KernelDensity
 
 
 def get_nearest_neighbor_distances(subsampling_result: np.ndarray) -> np.ndarray:
@@ -27,3 +28,13 @@ def point_diversity_histogram(subsampling_result: np.ndarray, num_bins=10):
 
 def number_of_points_remaining(subsampling_result: np.ndarray) -> int:
     return subsampling_result.shape[0]
+
+
+
+def point_diversity_kde(subsampling_result: np.ndarray) -> np.ndarray:
+    distances = get_nearest_neighbor_distances(subsampling_result).reshape(-1, 1)
+    kde = KernelDensity(kernel='gaussian', bandwidth=0.03).fit(distances)
+    x_axis_points = np.linspace(0, np.max(distances), np.size(distances)).reshape(-1, 1)
+    log_dens = kde.score_samples(x_axis_points)
+    return x_axis_points, log_dens
+    

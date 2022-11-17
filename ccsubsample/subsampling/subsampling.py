@@ -16,6 +16,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from pykdtree.kdtree import KDTree
 from .utils import reduce_dimensions_with_pca, scale_and_standardize_data, get_image_indices_to_keep
+import faiss
 
 try:
     import cPickle as pickle
@@ -41,10 +42,21 @@ def pykdtree_query(full_data, data_slice):
     kd_tree = KDTree(full_data, leafsize=6)
     return kd_tree.query(data_slice, k=2)
 
+    
 def single_process_kdtree_query(remaining_datapoints):
     kd_tree = KDTree(remaining_datapoints, leafsize=6)
     # get 2 nearest neighbors, because the first closest will be the point itself
     distances, indices = kd_tree.query(remaining_datapoints, k=2)
+    return distances, indices
+
+def ivfpq_query(remaining_datapoints):
+    dim = remaining_datapoints.shape[1]
+    flat_vectors = faiss.IndexFlatL2(dim)
+    index = faiss.IndexIVFPQ(flat_vectors, dim, nlists=2048, m=8, nbits=8)
+    index.train(remaining_datapoints)
+    index.add(remaining_datapoints)
+    k = 32
+    distances, indices = index.search(remaining_datapoints, k)
     return distances, indices
 
 def multi_process_kdtree_query(remaining_datapoints, num_cpus_to_not_use=1):
@@ -189,7 +201,89 @@ def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
     return data_indices
 
+
+def faiss_subsample(data, cutoff_sig=0.25, verbose=1):
+    """
+    Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
+    Parameters
+    -------------
+    :param data: the list of data to subsample
+    :param cutoff_sig: float -  cutoff significance. the cutoff distance equals to the Euclidean
+        norm of the standard deviations in all dimensions of the data points
+    :param verbose: int - level of verbosity
+    :param num_cpus_to_not_use: int - the number of machine cpus to leave free in the case of
+        using multiprocessing to query the kdtree
+    Return
+    -------------
+    overall_keep_list: The list of indices of the final subsampled entries
+    """
+    start = 0
     
+    if verbose >= 1:
+        start = time.time()
+        print("Started NN-ccsubsample, original length: {}".format(len(data)))
+    
+    cutoff = cutoff_sig * sqrt_of_summed_variance(data)
+    
+    # initialize the index
+    original_data_indices = np.arange(len(data))
+    permanent_keep_indices = set()
+    
+    remaining_datapoints = np.asarray(data)
+    keep_going = True
+    iter_count = 1
+    old_overall_keep_len = 0
+    iter_start = 0
+    while keep_going:
+        if verbose >= 2:
+            print("Start iteration {}, Sampleable data points remaining: {}".format(iter_count,
+                                                                                    len(original_data_indices)))
+            iter_start = time.time()
+        
+        # build and query nearest neighbour model
+        distances, indices = single_process_kdtree_query(remaining_datapoints)
+        
+        # if distance between a point and its nearest neighbor is below cutoff distance,
+        # add the pair's indices (for this iteration) to the candidate removal list
+        removal_candidate_indices_with_neighbor = indices[:][distances[:, 1] <= cutoff]
+        
+        # if distance between a point and its nearest neighbor is above the cutoff distance,
+        # the former point can never be removed, so add it to the permanent keep list
+        iteration_permanent_keeps = original_data_indices[distances[:, 1] > cutoff]
+        
+        # set aside any data points above the cutoff, since they can never be removed
+        permanent_keep_indices = permanent_keep_indices.union(list(iteration_permanent_keeps))
+        
+        keep_remove_pairs = find_keep_remove_pairs(removal_candidate_indices_with_neighbor)
+        keep_indices = find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs)
+        
+        # keep_indices length can be 0 if all remaining points have been added to the
+        # permanent keep list
+        if len(keep_indices) == 0:
+            break
+        original_data_indices = original_data_indices[keep_indices]
+        remaining_datapoints = remaining_datapoints[keep_indices]
+        
+        overall_keep_len = original_data_indices.size + len(permanent_keep_indices)
+        if overall_keep_len == old_overall_keep_len:
+            keep_going = False
+        
+        if verbose >= 2:
+            total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
+            iter_time = time.time() - iter_start
+            to_print = "End iteration {}. Total data points remaining: {}\t Time:{}"
+            print(to_print.format(iter_count, total_remaining_length, iter_time))
+            iter_count += 1
+        old_overall_keep_len = overall_keep_len
+    if verbose >= 1:
+        total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
+        total_time = time.time() - start
+        to_print = "End NN-ccsubsample. Data points remaining: {}\t Time:{}"
+        print(to_print.format(total_remaining_length, total_time))
+    data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
+    return data_indices
+
+
 def update_clusters(keep_remove_pairs, clusters):
     for keep, remove in keep_remove_pairs:
         clusters[keep] += clusters[remove]

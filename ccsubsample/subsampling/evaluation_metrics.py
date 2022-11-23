@@ -1,14 +1,21 @@
 import math
+import faiss
 import numpy as np
 from typing import Tuple
 from pykdtree.kdtree import KDTree
+from sklearn.preprocessing import normalize
 from sklearn.neighbors import KernelDensity
 
 
 def get_nearest_neighbor_distances(subsampling_result: np.ndarray) -> np.ndarray:
-    kd_tree = KDTree(subsampling_result)
-    distances, _ = kd_tree.query(subsampling_result, k=2)
-    return distances[:, 1]
+    _, dim = subsampling_result.shape
+    index = faiss.IndexFlatL2(dim)
+    index.add(subsampling_result)
+    d, i = index.search(subsampling_result, 2)
+    self_indices = np.arange(0, subsampling_result.shape[0])
+    distances = d[:, 1]
+    distances[i[:, 0] != self_indices] = d[:, 0][i[:, 0] != self_indices]
+    return distances
 
 
 def point_diversity_mean_std(subsampling_result: np.ndarray) -> Tuple:
@@ -28,7 +35,6 @@ def point_diversity_histogram(subsampling_result: np.ndarray, num_bins=10):
 
 def number_of_points_remaining(subsampling_result: np.ndarray) -> int:
     return subsampling_result.shape[0]
-
 
 
 def point_diversity_kde(subsampling_result: np.ndarray) -> np.ndarray:

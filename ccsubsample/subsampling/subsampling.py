@@ -47,17 +47,82 @@ def single_process_kdtree_query(remaining_datapoints):
     kd_tree = KDTree(remaining_datapoints, leafsize=6)
     # get 2 nearest neighbors, because the first closest will be the point itself
     distances, indices = kd_tree.query(remaining_datapoints, k=2)
+    self_indices = np.arange(0, remaining_datapoints.shape[0])
+    test = np.sum(self_indices != indices[:, 0])
     return distances, indices
 
-def ivfpq_query(remaining_datapoints):
-    dim = remaining_datapoints.shape[1]
-    flat_vectors = faiss.IndexFlatL2(dim)
-    index = faiss.IndexIVFPQ(flat_vectors, dim, nlists=2048, m=8, nbits=8)
-    index.train(remaining_datapoints)
+
+def flat_index(remaining_datapoints):
+    n, dim = remaining_datapoints.shape
+    index = faiss.IndexFlatL2(dim)
     index.add(remaining_datapoints)
-    k = 32
-    distances, indices = index.search(remaining_datapoints, k)
+    return index
+
+
+def ivf_index(remaining_datapoints):
+    n, dim = remaining_datapoints.shape
+    if n < 10000:
+        return flat_index(remaining_datapoints)
+    quantizer = faiss.IndexFlatL2(dim)
+    nlists = 2 ** math.floor(math.log(n / 10))
+    index = faiss.IndexIVFFlat(quantizer, dim, nlists)
+    t = time.time()
+    index.train(remaining_datapoints)
+    index.nprobe = 8
+    print("training time: {}".format(time.time() - t))
+    index.add(remaining_datapoints)
+    return index
+
+
+def ivfpq_index(remaining_datapoints):
+    # TODO - automatically perform dimensionality reduction so dim % m == 0
+    n, dim = remaining_datapoints.shape
+    if n < 10000:
+        return flat_index(remaining_datapoints)
+    m = 8
+    nbits = min(math.floor(math.log(n / 10)), 8)
+    quantizer = faiss.IndexFlatL2(dim)
+    nlists = 2 ** math.floor(math.log(n / 10))
+    index = faiss.IndexIVFPQ(quantizer, dim, nlists, m, nbits)
+    t = time.time()
+    index.train(remaining_datapoints)
+    index.nprobe = 8
+    print("training time: {}".format(time.time() - t))
+    index.add(remaining_datapoints)
+    return index
+
+    
+def hnsw_index(remaining_datapoints):
+    n, dim = remaining_datapoints.shape
+    if n < 10000:
+        return flat_index(remaining_datapoints)
+    m = 32
+    nbits = min(math.floor(math.log(n / 10)), 8)
+    index = faiss.IndexHNSWFlat(dim, m)
+    t = time.time()
+    print("training time: {}".format(time.time() - t))
+    index.add(remaining_datapoints)
+    return index
+
+
+def faiss_query(remaining_datapoints, index):
+    # TODO - automatically perform dimensionality reduction so dim % m == 0
+    k = 2
+    t = time.time()
+    d, i = index.search(remaining_datapoints, k)
+    print("search time: {}".format(time.time() - t))
+    self_indices = np.arange(0, remaining_datapoints.shape[0])
+    distances = d[:, 1]
+    indices = i[:, 1]
+    # faiss does not find a vector to be its own nearest neighbor 100% of the time,
+    # so we need to make sure we keep the vector's 1st nearest neighbor in those cases
+    distances[i[:, 0] != self_indices] = d[:, 0][i[:, 0] != self_indices]
+    indices[i[:, 0] != self_indices] = i[:, 0][i[:, 0] != self_indices]
+    distances = np.concatenate((np.zeros((distances.shape[0], 1)), distances[:, None]), axis=1)
+    indices = np.concatenate((self_indices[:, None], indices[:, None]), axis=1)
+    
     return distances, indices
+
 
 def multi_process_kdtree_query(remaining_datapoints, num_cpus_to_not_use=1):
     cpus = multiprocessing.cpu_count() - num_cpus_to_not_use
@@ -119,6 +184,27 @@ def find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs
     # instead, remove the remove_indices from the original removal_candidate_indices_with_neighbor array
     keep_indices = np.array(list(set(removal_candidate_indices_with_neighbor[:, 0]) - set(remove_indices)))
     return keep_indices
+    
+    
+def kmeans_cluster_fn(remaining_datapoints, num_clusters):
+    _, dim = remaining_datapoints.shape
+    kmeans = faiss.Kmeans(dim, num_clusters)
+    kmeans.train(remaining_datapoints)
+    return kmeans.centroids
+
+
+def cluster_subsample(data, num_points_desired, cluster_fn):
+    remaining_datapoints = np.asarray(data)
+    clusters = cluster_fn(remaining_datapoints, num_points_desired)
+    _, dim = remaining_datapoints.shape
+    all_points_index = faiss.IndexFlatL2(dim)
+    all_points_index.add(remaining_datapoints)
+    _, selected_indices = all_points_index.search(clusters, 1)
+    return selected_indices.reshape(-1)
+    
+    
+def kmeans_subsample(data, num_points_desired):
+    return cluster_subsample(data, num_points_desired, kmeans_cluster_fn)
 
 
 def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
@@ -130,8 +216,6 @@ def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
     :param cutoff_sig: float -  cutoff significance. the cutoff distance equals to the Euclidean
         norm of the standard deviations in all dimensions of the data points
     :param verbose: int - level of verbosity
-    :param num_cpus_to_not_use: int - the number of machine cpus to leave free in the case of
-        using multiprocessing to query the kdtree
     Return
     -------------
     overall_keep_list: The list of indices of the final subsampled entries
@@ -202,17 +286,16 @@ def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
     return data_indices
 
 
-def faiss_subsample(data, cutoff_sig=0.25, verbose=1):
+def faiss_subsample(data, index_fn, cutoff_sig=0.25, verbose=1):
     """
     Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
     Parameters
     -------------
     :param data: the list of data to subsample
-    :param cutoff_sig: float -  cutoff significance. the cutoff distance equals to the Euclidean
+    :param index_fn: function for creating the faiss index
+    :param cutoff_sig: float -  cutoff significance. The cutoff distance is equal to the Euclidean
         norm of the standard deviations in all dimensions of the data points
     :param verbose: int - level of verbosity
-    :param num_cpus_to_not_use: int - the number of machine cpus to leave free in the case of
-        using multiprocessing to query the kdtree
     Return
     -------------
     overall_keep_list: The list of indices of the final subsampled entries
@@ -241,8 +324,9 @@ def faiss_subsample(data, cutoff_sig=0.25, verbose=1):
             iter_start = time.time()
         
         # build and query nearest neighbour model
-        distances, indices = single_process_kdtree_query(remaining_datapoints)
-        
+        index = index_fn(remaining_datapoints)
+        distances, indices = faiss_query(remaining_datapoints, index)
+
         # if distance between a point and its nearest neighbor is below cutoff distance,
         # add the pair's indices (for this iteration) to the candidate removal list
         removal_candidate_indices_with_neighbor = indices[:][distances[:, 1] <= cutoff]

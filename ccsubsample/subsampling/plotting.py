@@ -7,7 +7,7 @@ def plot_kde(x, y_log_density, title):
     plt.fill(np.insert(x, 0, 0), np.insert(np.exp(y_log_density), 0, 0))
     plt.title("{} KDE".format(title))
     plt.xlabel("Distance")
-    plt.ylabel("Frequency")
+    plt.ylabel("Density")
     plt.axis()
     plt.show()
 

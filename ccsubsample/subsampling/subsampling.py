@@ -367,6 +367,15 @@ def faiss_subsample(data, index_fn, cutoff_sig=0.25, verbose=1):
     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
     return data_indices
 
+def faiss_flat_subsample(data, cutoff_sig=0.25, verbose=1):
+    return faiss_subsample(data, flat_index, cutoff_sig, verbose)
+
+def faiss_ivf_subsample(data, cutoff_sig=0.25, verbose=1):
+    return faiss_subsample(data, ivf_index, cutoff_sig, verbose)
+
+def faiss_ivfpq_subsample(data, cutoff_sig=0.25, verbose=1):
+    return faiss_subsample(data, ivfpq_index, cutoff_sig, verbose)
+
 
 def update_clusters(keep_remove_pairs, clusters):
     for keep, remove in keep_remove_pairs:

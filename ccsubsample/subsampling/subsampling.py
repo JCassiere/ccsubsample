@@ -15,27 +15,13 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from pykdtree.kdtree import KDTree
-from .utils import reduce_dimensions_with_pca, scale_and_standardize_data, get_image_indices_to_keep
+from .utils import sqrt_of_summed_variance, reduce_dimensions_with_pca, scale_and_standardize_data, get_image_indices_to_keep
 import faiss
 
 try:
     import cPickle as pickle
 except:
     import pickle
-
-
-def sqrt_of_summed_variance(data):
-    """
-    Find the variance for each dimension across all inputs, then sum them and take
-    the square root
-    :param data: List
-    :return:
-    """
-    array_data = np.asarray(data)
-    std = np.std(data, axis=0)
-    variances = np.power(std, 2)
-    sqrt_summed_variance = np.sqrt(np.sum(variances))
-    return sqrt_summed_variance
 
 
 def pykdtree_query(full_data, data_slice):

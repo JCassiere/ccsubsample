@@ -5,6 +5,7 @@ from typing import Tuple
 from pykdtree.kdtree import KDTree
 from sklearn.preprocessing import normalize
 from sklearn.neighbors import KernelDensity
+from .utils import sqrt_of_summed_variance
 
 
 def get_nearest_neighbor_distances(subsampling_result: np.ndarray) -> np.ndarray:
@@ -43,4 +44,16 @@ def point_diversity_kde(subsampling_result: np.ndarray, bandwidth=0.5) -> np.nda
     x_axis_points = np.linspace(0, np.max(distances), np.size(distances)).reshape(-1, 1)
     log_dens = kde.score_samples(x_axis_points)
     return x_axis_points, log_dens
+
+def get_outlier_indices(original_data: np.ndarray, outlier_cutoff_modifier: float):
+    indices = np.arange(0, original_data.shape[0])
+    distances = get_nearest_neighbor_distances(original_data)
+    cutoff = outlier_cutoff_modifier * sqrt_of_summed_variance(original_data)
+    outlier_indices = indices[distances >= cutoff]
+    return outlier_indices
     
+
+def calculate_outlier_retention(original_data: np.ndarray, subsampled_indices: np.ndarray, outlier_cutoff_modifier: float) -> float:
+    outlier_indices = get_outlier_indices(original_data, outlier_cutoff_modifier)
+    num_retained = np.sum(np.isin(outlier_indices, subsampled_indices))
+    return num_retained / np.shape(outlier_indices)[0]

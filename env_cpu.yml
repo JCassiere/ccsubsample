@@ -5,9 +5,9 @@ channels:
   - defaults
 dependencies:
   - pip
-  - python=3.6.*
+  - python=3.9.*
   - pykdtree
-  - sklearn
+  - scikit-learn
   - matplotlib
   - numpy
   - pytorch

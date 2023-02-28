@@ -52,7 +52,6 @@ def get_outlier_indices(original_data: np.ndarray, outlier_cutoff_modifier: floa
     outlier_indices = indices[distances >= cutoff]
     return outlier_indices
     
-def calculate_outlier_retention(original_data: np.ndarray, subsampled_indices: np.ndarray, outlier_cutoff_modifier: float) -> float:
-    outlier_indices = get_outlier_indices(original_data, outlier_cutoff_modifier)
+def calculate_outlier_retention(outlier_indices: np.ndarray, subsampled_indices: np.ndarray, outlier_cutoff_modifier: float) -> float:
     num_retained = np.sum(np.isin(outlier_indices, subsampled_indices))
     return num_retained / np.shape(outlier_indices)[0]

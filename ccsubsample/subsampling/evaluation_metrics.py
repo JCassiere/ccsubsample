@@ -1,10 +1,11 @@
 import math
 import faiss
 import numpy as np
+from scipy.stats import qmc
 from typing import Tuple
 from pykdtree.kdtree import KDTree
 from sklearn.preprocessing import normalize
-from sklearn.neighbors import KernelDensity
+from sklearn.neighbors import KernelDensity, LocalOutlierFactor
 from .utils import sqrt_of_summed_variance
 
 
@@ -45,13 +46,27 @@ def point_diversity_kde(subsampling_result: np.ndarray, bandwidth=0.5) -> np.nda
     log_dens = kde.score_samples(x_axis_points)
     return x_axis_points, log_dens
 
-def get_outlier_indices(original_data: np.ndarray, outlier_cutoff_modifier: float):
+def get_outlier_indices(original_data: np.ndarray, outlier_percentile: float = 0.99):
     indices = np.arange(0, original_data.shape[0])
     distances = get_nearest_neighbor_distances(original_data)
-    cutoff = outlier_cutoff_modifier * sqrt_of_summed_variance(original_data)
+    cutoff = np.quantile(distances, outlier_percentile)
     outlier_indices = indices[distances >= cutoff]
     return outlier_indices
+
+def get_local_outlier_factor_indices(original_data: np.ndarray, k_neighbors: int = 20, outlier_score: float = 1.5):
+    lof = LocalOutlierFactor(n_neighbors=k_neighbors)
+    lof.fit(original_data)
+    scores = -lof.negative_outlier_factor_
+    all_indices = np.arange(original_data.shape[0])
+    return all_indices[scores >= outlier_score]
     
-def calculate_outlier_retention(outlier_indices: np.ndarray, subsampled_indices: np.ndarray, outlier_cutoff_modifier: float) -> float:
+def calculate_outlier_retention(outlier_indices: np.ndarray, subsampled_indices: np.ndarray) -> float:
     num_retained = np.sum(np.isin(outlier_indices, subsampled_indices))
     return num_retained / np.shape(outlier_indices)[0]
+
+def calculate_discrepancy(data):
+    # TODO - move normalization to unit hypercube to its own function
+    min_vals = data.min(axis=tuple(range(data.ndim - 1)))
+    max_vals = data.max(axis=tuple(range(data.ndim - 1)))
+    normalized_data = (data - min_vals) / (max_vals - min_vals)
+    return qmc.discrepancy(normalized_data, workers=-1)

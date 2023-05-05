@@ -7,18 +7,6 @@ import hashlib
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-def sqrt_of_summed_variance(data):
-    """
-    Find the variance for each dimension across all inputs, then sum them and take
-    the square root
-    :param data: List
-    :return:
-    """
-    array_data = np.asarray(data)
-    variance = np.var(data, axis=0)
-    sqrt_summed_variance = np.sqrt(np.sum(variance))
-    return sqrt_summed_variance
-
 
 def extract_fingerprints_with_image_indices(pytorch_geom_data):
     """

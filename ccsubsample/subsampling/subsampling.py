@@ -15,8 +15,11 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from pykdtree.kdtree import KDTree
-from .utils import sqrt_of_summed_variance, reduce_dimensions_with_pca, scale_and_standardize_data, get_image_indices_to_keep
+from .utils import sqrt_of_summed_variance, sqrt_of_avg_variance, reduce_dimensions_with_pca, scale_and_standardize_data, get_image_indices_to_keep, convert_to_mahalanobis_space
 import faiss
+from scipy.stats import qmc
+import torch
+from torch_geometric.nn.pool import fps
 
 try:
     import cPickle as pickle
@@ -271,8 +274,7 @@ def kdtree_subsample(data, cutoff_sig=0.25, verbose=1):
     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
     return data_indices
 
-
-def faiss_subsample(data, index_fn, cutoff_sig=0.25, verbose=1):
+def faiss_subsample(data, index_fn, cutoff_percentile, verbose=1):
     """
     Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
     Parameters
@@ -292,13 +294,19 @@ def faiss_subsample(data, index_fn, cutoff_sig=0.25, verbose=1):
         start = time.time()
         print("Started NN-ccsubsample, original length: {}".format(len(data)))
     
-    cutoff = cutoff_sig * sqrt_of_summed_variance(data)
-    
     # initialize the index
     original_data_indices = np.arange(len(data))
     permanent_keep_indices = set()
     
     remaining_datapoints = np.asarray(data)
+    
+    # calculate cutoff as some percentile of nearest neighbor distances
+    index = index_fn(remaining_datapoints)
+    distances, indices = faiss_query(remaining_datapoints, index)
+    distances = np.sqrt(distances)
+    cutoff = np.quantile(distances, cutoff_percentile)
+    
+    first_loop = True
     keep_going = True
     iter_count = 1
     old_overall_keep_len = 0
@@ -309,9 +317,15 @@ def faiss_subsample(data, index_fn, cutoff_sig=0.25, verbose=1):
                                                                                     len(original_data_indices)))
             iter_start = time.time()
         
-        # build and query nearest neighbour model
-        index = index_fn(remaining_datapoints)
-        distances, indices = faiss_query(remaining_datapoints, index)
+        # reuse distances calculated for cutoff
+        if first_loop:
+            first_loop = False
+        else:
+            # build and query nearest neighbour model
+            index = index_fn(remaining_datapoints)
+            distances, indices = faiss_query(remaining_datapoints, index)
+            # Faiss uses the squared distance, so take the square root
+            distances = np.sqrt(distances)
 
         # if distance between a point and its nearest neighbor is below cutoff distance,
         # add the pair's indices (for this iteration) to the candidate removal list
@@ -353,14 +367,52 @@ def faiss_subsample(data, index_fn, cutoff_sig=0.25, verbose=1):
     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
     return data_indices
 
-def faiss_flat_subsample(data, cutoff_sig=0.25, verbose=1):
-    return faiss_subsample(data, flat_index, cutoff_sig, verbose)
+def faiss_flat_subsample(data, cutoff_percentile=0.99, verbose=1):
+    return faiss_subsample(data, flat_index, cutoff_percentile, verbose)
 
-def faiss_ivf_subsample(data, cutoff_sig=0.25, verbose=1):
-    return faiss_subsample(data, ivf_index, cutoff_sig, verbose)
+def faiss_ivf_subsample(data, cutoff_percentile=0.99, verbose=1):
+    return faiss_subsample(data, ivf_index, cutoff_percentile, verbose)
 
-def faiss_ivfpq_subsample(data, cutoff_sig=0.25, verbose=1):
-    return faiss_subsample(data, ivfpq_index, cutoff_sig, verbose)
+def faiss_ivfpq_subsample(data, cutoff_percentile=0.99, verbose=1):
+    return faiss_subsample(data, ivfpq_index, cutoff_percentile, verbose)
+
+def euclidean_distance(a, b):
+    return np.linalg.norm(a - b, axis=1)
+
+def farthest_point_sampling(data, num_points):
+    torch_data = torch.from_numpy(data)
+    indices = fps(torch_data, batch=None, ratio=num_points / len(data), random_start=True)
+    return np.asarray(indices)
+
+def farthest_point_sampling_batched(data, num_points):
+    torch_data = torch.from_numpy(data)
+    cpu_count = multiprocessing.cpu_count()
+    batch_length = torch_data.size()[0] // cpu_count
+    offset = torch_data.size()[0] - (batch_length * cpu_count)
+    batches = [torch.ones(batch_length, dtype=torch.long) * i for i in range(cpu_count - 1)]
+    batches += [torch.ones(batch_length + offset, dtype=torch.long) * (cpu_count - 1)]
+    batch = torch.cat(batches)
+    indices = fps(torch_data, batch=batch, ratio=num_points / len(data), random_start=True)
+    return np.asarray(indices)
+
+def sobol_subsample(data, num_points_desired):
+    _, dim = data.shape
+    sampler = qmc.Sobol(dim)
+    m = math.ceil(math.log(num_points_desired, 2))
+    sample = sampler.random_base2(m)
+    
+    # convert original data to have range [0, 1) in all dimensions
+    min_vals = data.min(axis=tuple(range(data.ndim - 1)))
+    max_vals = data.max(axis=tuple(range(data.ndim - 1)))
+    normalized_data = (data - min_vals) / (max_vals - min_vals)
+    
+    # create nearest neighbor index of normalized data
+    index = ivf_index(normalized_data)
+    distances, indices = index.search(sample, k=1)
+    # TODO - need to make sure taking only the first num_points_desired_points
+    #  is valid
+    return indices[:num_points_desired].reshape(-1)
+    # return indices.reshape(-1)
 
 
 def update_clusters(keep_remove_pairs, clusters):

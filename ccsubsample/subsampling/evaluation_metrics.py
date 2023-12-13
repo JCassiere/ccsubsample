@@ -6,7 +6,6 @@ from typing import Tuple
 from pykdtree.kdtree import KDTree
 from sklearn.preprocessing import normalize
 from sklearn.neighbors import KernelDensity, LocalOutlierFactor
-from .utils import sqrt_of_summed_variance
 
 
 def get_nearest_neighbor_distances(subsampling_result: np.ndarray) -> np.ndarray:
@@ -58,6 +57,7 @@ def get_local_outlier_factor_indices(original_data: np.ndarray, k_neighbors: int
     lof.fit(original_data)
     scores = -lof.negative_outlier_factor_
     all_indices = np.arange(original_data.shape[0])
+    thing = all_indices[scores >= outlier_score]
     return all_indices[scores >= outlier_score]
     
 def calculate_outlier_retention(outlier_indices: np.ndarray, subsampled_indices: np.ndarray) -> float:

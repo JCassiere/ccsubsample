@@ -185,84 +185,6 @@ def kmeans_subsample(data, num_points_desired):
     return cluster_subsample(data, num_points_desired, kmeans_cluster_fn)
 
 
-# def faiss_ivf_subsample(data, cutoff_sig=0.25, verbose=1):
-#     """
-#     Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
-#     Parameters
-#     -------------
-#     :param data: the list of data to subsample
-#     :param cutoff_sig: float -  cutoff significance. the cutoff distance equals to the Euclidean
-#         norm of the standard deviations in all dimensions of the data points
-#     :param verbose: int - level of verbosity
-#     Return
-#     -------------
-#     overall_keep_list: The list of indices of the final subsampled entries
-#     """
-#     start = 0
-    
-#     if verbose >= 1:
-#         start = time.time()
-#         print("Started NN-ccsubsample, original length: {}".format(len(data)))
-    
-#     cutoff = cutoff_sig * sqrt_of_summed_variance(data)
-    
-#     # initialize the index
-#     original_data_indices = np.arange(len(data))
-#     permanent_keep_indices = set()
-    
-#     remaining_datapoints = np.asarray(data)
-#     keep_going = True
-#     iter_count = 1
-#     old_overall_keep_len = 0
-#     iter_start = 0
-#     while keep_going:
-#         if verbose >= 2:
-#             print("Start iteration {}, Sampleable data points remaining: {}".format(iter_count, len(original_data_indices)))
-#             iter_start = time.time()
-        
-#         # build and query nearest neighbour model
-#         distances, indices = single_process_kdtree_query(remaining_datapoints)
-        
-#         # if distance between a point and its nearest neighbor is below cutoff distance,
-#         # add the pair's indices (for this iteration) to the candidate removal list
-#         removal_candidate_indices_with_neighbor = indices[:][distances[:, 1] <= cutoff]
-        
-#         # if distance between a point and its nearest neighbor is above the cutoff distance,
-#         # the former point can never be removed, so add it to the permanent keep list
-#         iteration_permanent_keeps = original_data_indices[distances[:, 1] > cutoff]
-        
-#         # set aside any data points above the cutoff, since they can never be removed
-#         permanent_keep_indices = permanent_keep_indices.union(list(iteration_permanent_keeps))
-
-#         keep_remove_pairs = find_keep_remove_pairs(removal_candidate_indices_with_neighbor)
-#         keep_indices = find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs)
-        
-#         # keep_indices length can be 0 if all remaining points have been added to the
-#         # permanent keep list
-#         if len(keep_indices) == 0:
-#             break
-#         original_data_indices = original_data_indices[keep_indices]
-#         remaining_datapoints = remaining_datapoints[keep_indices]
-        
-#         overall_keep_len = original_data_indices.size + len(permanent_keep_indices)
-#         if overall_keep_len == old_overall_keep_len:
-#             keep_going = False
-        
-#         if verbose >= 2:
-#             total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
-#             iter_time = time.time() - iter_start
-#             to_print = "End iteration {}. Total data points remaining: {}\t Time:{}"
-#             print(to_print.format(iter_count, total_remaining_length, iter_time))
-#             iter_count += 1
-#         old_overall_keep_len = overall_keep_len
-#     if verbose >= 1:
-#         total_remaining_length = len(original_data_indices) + len(permanent_keep_indices)
-#         total_time = time.time() - start
-#         to_print = "End NN-ccsubsample. Data points remaining: {}\t Time:{}"
-#         print(to_print.format(total_remaining_length, total_time))
-#     data_indices = sorted(list(original_data_indices) + list(permanent_keep_indices))
-#     return data_indices
-
 def faiss_subsample(data, index_fn, cutoff_percentile, verbose=1):
     """
     Using Nearest-Neighbor search based algorithm, find the list of indices of the subsampled dataset
@@ -270,8 +192,9 @@ def faiss_subsample(data, index_fn, cutoff_percentile, verbose=1):
     -------------
     :param data: the list of data to subsample
     :param index_fn: function for creating the faiss index
-    :param cutoff_sig: float -  cutoff significance. The cutoff distance is equal to the Euclidean
-        norm of the standard deviations in all dimensions of the data points
+    :param cutoff_percentile: float - a percentile that will be used to calculate the cutoff distance
+                                      between data points. Any point whose nearest neighbor is below the
+                                      cutoff distance is a candidate for removal from the dataset.
     :param verbose: int - level of verbosity
     Return
     -------------
@@ -423,94 +346,6 @@ def num_large_clusters(clusters, N=5):
 def num_small_clusters(clusters, N=5):
     singleton_cluster_positions = [1 if len(x) < N else 0 for x in clusters.values()]
     return sum(singleton_cluster_positions)
-
-
-# def subsample_clustering(data, start_cutoff_sig=0.2, max_clusters=20, num_cpus_to_not_use=1):
-#     """
-#     Extend the nearest-neighbor ccsubsample algorithm (as seen in subsample() above) to a fast
-#     clustering algorithm. When a point is "removed", instead assign it (and all its "cluster" points)
-#     to its nearest neighbor's "cluster". If a point has a cluster attached to it, it is termed a "leader".
-#     This is similar to agglomerative clustering where the distance metric is distance between cluster
-#     "leaders" rather than average linkage, etc.
-#     -------------
-#     :param data: the list of data to subsample
-#     :param start_cutoff_sig: float -  cutoff significance. the cutoff distance equals to the Euclidean
-#         norm of the standard deviations in all dimensions of the data points
-#     :param max_clusters: the maximum desired number of clusters
-#     :param num_cpus_to_not_use: int - the number of machine cpus to leave free in the case of
-#         using multiprocessing to query the kdtree
-#     :return clusters: dict[(int, list)] A dictionary where the keys are the original datapoint indices of cluster
-#         "leaders", and the keys are lists of datapoint indices belonging to that "leader's" cluster
-#     """
-#     start = 0
-    
-#     cutoff = start_cutoff_sig * sqrt_of_summed_variance(data)
-    
-#     # initialize the index
-#     original_data_indices = np.arange(len(data))
-#     permanent_keep_indices = set()
-    
-#     remaining_datapoints = np.array(data)
-#     keep_going = True
-#     iter_count = 1
-#     old_overall_keep_len = 0
-#     iter_start = 0
-
-#     clusters = {}
-#     for i in range(remaining_datapoints.shape[0]):
-#         clusters[i] = [i]
-        
-#     # heuristic for testing whether enough clustering has been done so far
-#     max_singleton_clusters = remaining_datapoints.shape[0] * 0.25
-    
-#     # we want meaningful clusters, so don't count singleton clusters (i.e. outlier data points)
-#     # or small clusters (with <5 members) when checking if we are below max_clusters
-#     while num_large_clusters(clusters) > max_clusters or num_small_clusters(clusters) > max_singleton_clusters:
-#         while keep_going:
-#             # build and query nearest neighbour model
-#             # if remaining_datapoints.size < 5000000:
-#             distances, indices = single_process_kdtree_query(remaining_datapoints)
-#             # else:
-#             #     distances, indices = multi_process_kdtree_query(remaining_datapoints, num_cpus_to_not_use)
-            
-#             # if distance between a point and its nearest neighbor is below cutoff distance,
-#             # add the pair's indices (for this iteration) to the candidate removal list
-#             removal_candidate_indices_with_neighbor = indices[:][distances[:, 1] <= cutoff]
-            
-#             # if distance between a point and its nearest neighbor is above the cutoff distance,
-#             # the former point can never be removed, so add it to the permanent keep list
-#             iteration_permanent_keeps = original_data_indices[distances[:, 1] > cutoff]
-            
-#             # set aside any data points above the cutoff, since they can never be removed
-#             permanent_keep_indices = permanent_keep_indices.union(list(iteration_permanent_keeps))
-            
-#             keep_remove_pairs = find_keep_remove_pairs(removal_candidate_indices_with_neighbor)
-#             # keep_indices length can be 0 if all remaining points have been added to the
-#             # permanent keep list
-#             keep_indices = find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs)
-#             if len(keep_indices) == 0:
-#                 break
-
-#             keep_remove_array = np.array(keep_remove_pairs)
-#             keep_original = np.expand_dims(original_data_indices[keep_remove_array[:, 0]], axis=1)
-#             remove_original = np.expand_dims(original_data_indices[keep_remove_array[:, 1]], axis=1)
-#             original_keep_remove_pair_indices = np.concatenate((keep_original, remove_original), axis=1)
-#             clusters = update_clusters(original_keep_remove_pair_indices, clusters)
-            
-#             original_data_indices = original_data_indices[keep_indices]
-#             remaining_datapoints = remaining_datapoints[keep_indices]
-            
-#             overall_keep_len = original_data_indices.size + len(permanent_keep_indices)
-#             if overall_keep_len == old_overall_keep_len:
-#                 keep_going = False
-            
-#             old_overall_keep_len = overall_keep_len
-#         # make the cutoff bigger in order to merge more clusters
-#         original_data_indices = np.array(sorted(clusters.keys()))
-#         remaining_datapoints = np.array(data)[original_data_indices]
-        
-#         cutoff *= 1.25
-#     return clusters
 
 
 def batch_subsampling(

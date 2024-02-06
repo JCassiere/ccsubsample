@@ -12,6 +12,7 @@ dependencies:
   - numpy
   - pytorch
   - faiss-cpu=1.7.3
+  - pytorch-cluster
   - scipy=1.10.*
   - pip:
     - torch-geometric

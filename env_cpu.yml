@@ -1,7 +1,8 @@
-name: ccsubsample
+name: ccsubsample-test
 channels:
   - pytorch
   - conda-forge
+  - pyg
   - defaults
 dependencies:
   - pip

@@ -1,4 +1,4 @@
-name: ccsubsample-test
+name: ccsubsample
 channels:
   - pytorch
   - conda-forge

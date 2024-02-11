@@ -217,7 +217,10 @@ def faiss_subsample(data, index_fn, cutoff_percentile, verbose=1):
     distances, indices = faiss_query(remaining_datapoints, index)
     distances = np.sqrt(distances)
     cutoff = np.quantile(distances, cutoff_percentile)
-    
+    # TODO - if raw cutoff is 0, run subroutine that deletes one member of each pair of nearest neighbors
+    #  where the distance between them is 0. Will have to keep doing this until the cutoff is > 0
+    #  could also just automatically go through and delete points where distance is 0 first, but that would add
+    #  time unnecessarily for data where the cutoff is > 0
     first_loop = True
     keep_going = True
     iter_count = 1
@@ -253,15 +256,20 @@ def faiss_subsample(data, index_fn, cutoff_percentile, verbose=1):
         keep_remove_pairs = find_keep_remove_pairs(removal_candidate_indices_with_neighbor)
         keep_indices = find_keep_indices(removal_candidate_indices_with_neighbor, keep_remove_pairs)
         
-        # keep_indices length can be 0 if all remaining points have been added to the
-        # permanent keep list
+        # if keep_indices is empty, slicing like original_data_indices[keep_indices] will give an error
         if len(keep_indices) == 0:
-            break
-        original_data_indices = original_data_indices[keep_indices]
-        remaining_datapoints = remaining_datapoints[keep_indices]
+            original_data_indices = np.array([])
+            remaining_datapoints = np.array([])
+        else:
+            original_data_indices = original_data_indices[keep_indices]
+            remaining_datapoints = remaining_datapoints[keep_indices]
+        
         
         overall_keep_len = original_data_indices.size + len(permanent_keep_indices)
-        if overall_keep_len == old_overall_keep_len:
+        # remaining_datapoints length can be 0 if all remaining points have been added to the
+        # permanent keep list
+        # TODO - these two conditions may be logically equivalent
+        if overall_keep_len == old_overall_keep_len or len(remaining_datapoints) == 0:
             keep_going = False
         
         if verbose >= 2:

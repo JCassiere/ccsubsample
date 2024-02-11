@@ -216,11 +216,8 @@ def faiss_subsample(data, index_fn, cutoff_percentile, verbose=1):
     index = index_fn(remaining_datapoints)
     distances, indices = faiss_query(remaining_datapoints, index)
     distances = np.sqrt(distances)
-    cutoff = np.quantile(distances, cutoff_percentile)
-    # TODO - if raw cutoff is 0, run subroutine that deletes one member of each pair of nearest neighbors
-    #  where the distance between them is 0. Will have to keep doing this until the cutoff is > 0
-    #  could also just automatically go through and delete points where distance is 0 first, but that would add
-    #  time unnecessarily for data where the cutoff is > 0
+    cutoff = np.quantile(distances[:, 1], cutoff_percentile)   
+         
     first_loop = True
     keep_going = True
     iter_count = 1

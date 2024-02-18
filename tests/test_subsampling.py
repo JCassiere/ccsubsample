@@ -24,3 +24,14 @@ class MyTestCase(unittest.TestCase):
         indices = faiss_ivf_subsample(dataset)
         result = dataset[indices]
         np.testing.assert_array_equal(result, dataset[0:1, :])
+
+    def test_cutoff_calculation(self):
+        # TODO - Need to move cutoff calculation out into its own function
+        # was calculating based on the quantile of distances to self along with distances to nearest neighbor
+        # so half of the distances used in the calculation was 0 
+        pass
+
+    def test_cluster_from_subsampled_dataset(self):
+        # TODO
+        pass
+    

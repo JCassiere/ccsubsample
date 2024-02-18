@@ -80,7 +80,7 @@ def hnsw_index(remaining_datapoints):
     t = time.time()
     print("training time: {}".format(time.time() - t))
     index.add(remaining_datapoints)
-    return index
+    return index   
 
 
 def faiss_query(remaining_datapoints, index):
@@ -292,6 +292,22 @@ def faiss_ivf_subsample(data, cutoff_percentile=0.99, verbose=1):
 
 def faiss_ivfpq_subsample(data, cutoff_percentile=0.99, verbose=1):
     return faiss_subsample(data, ivfpq_index, cutoff_percentile, verbose)
+
+def cluster_from_subsampled_dataset(full_dataset, subsampled_dataset_indices):
+    subsampled_dataset = full_dataset[subsampled_dataset_indices]
+    index = flat_index(subsampled_dataset)
+    _, cluster_center_numbers = index.search(full_dataset, 1)
+    cluster_center_numbers = cluster_center_numbers.reshape(-1)
+    clusters = {}
+    for i in subsampled_dataset_indices:
+        clusters[i] = []
+    
+    # the indices returned by the index search are the indices of the subsampled dataset
+    # these indices need to be mapped back to the data points indices in the original dataset
+    for i in range(len(cluster_center_numbers)):
+        original_index = subsampled_dataset_indices[cluster_center_numbers[i]]
+        clusters[original_index].append(i)
+    return clusters
 
 def euclidean_distance(a, b):
     return np.linalg.norm(a - b, axis=1)

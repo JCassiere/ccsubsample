@@ -1,0 +1,19 @@
+name: ccsubsample
+channels:
+  - pytorch
+  - conda-forge
+  - pyg
+  - defaults
+dependencies:
+  - pip
+  - python=3.9.*
+  - pykdtree
+  - scikit-learn
+  - matplotlib
+  - numpy
+  - faiss-cpu=1.7.3
+  - pytorch-cluster
+  - scipy=1.10.*
+  - pip:
+    - torch-geometric
+

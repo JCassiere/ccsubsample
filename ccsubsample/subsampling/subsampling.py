@@ -307,6 +307,8 @@ def cluster_from_subsampled_dataset(full_dataset, subsampled_dataset_indices):
     for i in range(len(cluster_center_numbers)):
         original_index = subsampled_dataset_indices[cluster_center_numbers[i]]
         clusters[original_index].append(i)
+
+    # clusters format is a dictionary of {cluster center index: [list of indices belonging to cluster, including cluster center]}
     return clusters
 
 def euclidean_distance(a, b):
